@@ -20,7 +20,18 @@ void UGrapplingHookComponent::TickComponent(float DeltaTime, ELevelTick TickType
 {
     Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-    if (!bIsGrappling || !OwnerCharacter)
+    // Draw preview marker when not grappling
+    if (!bIsGrappling)
+    {
+        FHitResult PreviewHit;
+        if (FindGrappleTarget(PreviewHit))
+        {
+            DrawDebugSphere(GetWorld(), PreviewHit.ImpactPoint, 20.0f, 8, FColor::Yellow, false, 0.0f, 0, 3.0f);
+        }
+        return;
+    }
+
+    if (!OwnerCharacter)
         return;
 
     FVector CurrentLocation = OwnerCharacter->GetActorLocation();
@@ -50,43 +61,47 @@ void UGrapplingHookComponent::TickComponent(float DeltaTime, ELevelTick TickType
 #endif
 }
 
+bool UGrapplingHookComponent::FindGrappleTarget(FHitResult& OutHit) const
+{
+    FVector CamLoc;
+    FVector CamFwd;
+    GetCameraView(CamLoc, CamFwd);
+
+    FCollisionQueryParams Params;
+    Params.AddIgnoredActor(GetOwner());
+
+    FCollisionShape Sphere = FCollisionShape::MakeSphere(SweepRadius);
+
+    bool bHit = GetWorld()->SweepSingleByChannel(
+        OutHit,
+        CamLoc,
+        CamLoc + CamFwd * GrappleDistance,
+        FQuat::Identity,
+        ECC_Visibility,
+        Sphere,
+        Params
+    );
+
+    if (!bHit)
+        return false;
+
+    AActor* HitActor = OutHit.GetActor();
+    return (HitActor && HitActor->ActorHasTag(GrappleTag));
+}
+
 void UGrapplingHookComponent::FireHook()
 {
     if (!OwnerCharacter)
         return;
 
-    // Release any existing grapple first
     if (bIsGrappling)
     {
         ReleaseHook();
         return;
     }
 
-    FVector CamLoc;
-    FVector CamFwd;
-    GetCameraView(CamLoc, CamFwd);
-
     FHitResult HitResult;
-    FCollisionQueryParams Params;
-    Params.AddIgnoredActor(GetOwner());
-
-    bool bHit = GetWorld()->LineTraceSingleByChannel(
-        HitResult,
-        CamLoc,
-        CamLoc + CamFwd * GrappleDistance,
-        ECC_Visibility,
-        Params
-    );
-
-    if (!bHit)
-        return;
-
-    // Accept both specifically-tagged surfaces AND any solid world geometry
-    AActor* HitActor = HitResult.GetActor();
-    bool bValidTarget = (HitActor && HitActor->ActorHasTag(GrappleTag))
-                        || (HitResult.GetComponent() && !HitResult.GetComponent()->IsSimulatingPhysics());
-
-    if (!bValidTarget)
+    if (!FindGrappleTarget(HitResult))
         return;
 
     GrappleTargetPoint = HitResult.ImpactPoint;

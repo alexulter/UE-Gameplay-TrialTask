@@ -26,10 +26,17 @@ public:
     UFUNCTION(BlueprintPure, Category = "Mechanics|Grapple")
     bool IsGrappling() const { return bIsGrappling; }
 
+    /** Sweep for a valid grapple target and return hit info */
+    bool FindGrappleTarget(FHitResult& OutHit) const;
+
 protected:
     virtual void BeginPlay() override;
 
 private:
+    /** Sphere radius for the grapple aim sweep in cm */
+    UPROPERTY(EditDefaultsOnly, Category = "Grapple", meta=(ClampMin=5, ClampMax=100))
+    float SweepRadius = 15.0f;
+
     /** Maximum hook reach in cm */
     UPROPERTY(EditDefaultsOnly, Category = "Grapple", meta=(ClampMin=500, ClampMax=5000))
     float GrappleDistance = 2500.0f;
