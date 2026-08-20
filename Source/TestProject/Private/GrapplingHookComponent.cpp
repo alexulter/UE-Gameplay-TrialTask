@@ -1,4 +1,5 @@
 #include "GrapplingHookComponent.h"
+#include "GrabComponent.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Camera/CameraComponent.h"
@@ -23,6 +24,15 @@ void UGrapplingHookComponent::TickComponent(float DeltaTime, ELevelTick TickType
     // Draw preview marker when not grappling
     if (!bIsGrappling)
     {
+        if (OwnerCharacter)
+        {
+            const UGrabComponent* GrabComp = OwnerCharacter->FindComponentByClass<UGrabComponent>();
+            if (GrabComp && GrabComp->IsHoldingObject())
+            {
+                return;
+            }
+        }
+
         FHitResult PreviewHit;
         if (FindGrappleTarget(PreviewHit))
         {
@@ -97,6 +107,13 @@ void UGrapplingHookComponent::FireHook()
     if (bIsGrappling)
     {
         ReleaseHook();
+        return;
+    }
+
+    // Do not allow grappling if the character is currently holding an object
+    const UGrabComponent* GrabComp = OwnerCharacter->FindComponentByClass<UGrabComponent>();
+    if (GrabComp && GrabComp->IsHoldingObject())
+    {
         return;
     }
 
