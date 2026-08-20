@@ -65,10 +65,10 @@ void UGrapplingHookComponent::TickComponent(float DeltaTime, ELevelTick TickType
         Movement->Velocity = PullVelocity;
     }
 
-#if WITH_EDITOR
+//#if WITH_EDITOR
     DrawDebugLine(GetWorld(), CurrentLocation, GrappleTargetPoint, FColor::Yellow, false, -1.0f, 0, 2.0f);
     DrawDebugSphere(GetWorld(), GrappleTargetPoint, 20.0f, 8, FColor::Orange, false, -1.0f, 0, 2.0f);
-#endif
+//#endif
 }
 
 bool UGrapplingHookComponent::FindGrappleTarget(FHitResult& OutHit) const
