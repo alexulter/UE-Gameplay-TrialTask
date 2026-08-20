@@ -2,7 +2,6 @@
 #include "GameFramework/Character.h"
 #include "Camera/CameraComponent.h"
 #include "Engine/World.h"
-#include "DrawDebugHelpers.h"
 
 UMagneticGunComponent::UMagneticGunComponent()
 {
@@ -22,22 +21,37 @@ void UMagneticGunComponent::TickComponent(float DeltaTime, ELevelTick TickType, 
     if (!bIsAttracting || !TargetComponent)
         return;
 
+    // Chaos Physics aggressively sleeps bodies — must wake every tick or forces are ignored
+    TargetComponent->WakeRigidBody();
+
     FVector CamLoc;
     FVector CamFwd;
     GetCameraView(CamLoc, CamFwd);
 
+    FVector PullPoint = CamLoc + CamFwd * 150.0f; // point in front of player
     FVector ObjectLoc = TargetComponent->GetComponentLocation();
-    FVector Direction = (CamLoc + CamFwd * 150.0f) - ObjectLoc; // pull towards a point in front of player
-    float Distance = FMath::Max(Direction.Size(), 50.0f);        // avoid division by zero
-    Direction.Normalize();
+    FVector Direction = (PullPoint - ObjectLoc);
+    float   Distance  = Direction.Size();
 
-    // Force diminishes with distance (F = Base / Distance), scaled by DeltaTime
-    float Force = AttractForceBase / Distance * 100.0f;
-    TargetComponent->AddForce(Direction * Force, NAME_None, /*bAccelChange=*/false);
+    if (Distance < 30.0f)
+    {
+        // Close enough — stop the object gently
+        FVector Vel = TargetComponent->GetPhysicsLinearVelocity();
+        TargetComponent->SetPhysicsLinearVelocity(Vel * FMath::Max(0.0f, 1.0f - DeltaTime * 10.0f));
+        return;
+    }
 
-#if WITH_EDITOR
-    DrawDebugLine(GetWorld(), CamLoc, ObjectLoc, FColor::Cyan, false, -1.0f, 0, 1.5f);
-#endif
+    Direction /= Distance; // normalize
+
+    // Target speed: strong pull from far, slows as it approaches
+    float TargetSpeed = FMath::Clamp(Distance * 1.5f, 80.0f, AttractForceBase);
+
+    FVector TargetVelocity  = Direction * TargetSpeed;
+    FVector CurrentVelocity = TargetComponent->GetPhysicsLinearVelocity();
+
+    // Smoothly steer the velocity toward the pull direction
+    FVector NewVelocity = FMath::VInterpTo(CurrentVelocity, TargetVelocity, DeltaTime, 5.0f);
+    TargetComponent->SetPhysicsLinearVelocity(NewVelocity);
 }
 
 void UMagneticGunComponent::StartAttract()
@@ -71,16 +85,13 @@ void UMagneticGunComponent::Repel()
     FVector ObjectLoc = Target->GetComponentLocation();
     FVector Direction = (ObjectLoc - CamLoc).GetSafeNormal();
 
+    Target->WakeRigidBody();
     Target->AddImpulse(Direction * RepelImpulse, NAME_None, /*bVelChange=*/true);
-
-#if WITH_EDITOR
-    DrawDebugLine(GetWorld(), CamLoc, ObjectLoc, FColor::Red, false, 0.3f, 0, 3.0f);
-#endif
 }
 
 void UMagneticGunComponent::ToggleMode()
 {
-    StopAttract(); // stop any active beam first
+    StopAttract();
     CurrentMode = (CurrentMode == EMagneticMode::Attract) ? EMagneticMode::Repel : EMagneticMode::Attract;
 }
 
@@ -90,30 +101,37 @@ UPrimitiveComponent* UMagneticGunComponent::FindMagneticTarget() const
     FVector CamFwd;
     GetCameraView(CamLoc, CamFwd);
 
-    TArray<FHitResult> Hits;
     FCollisionQueryParams Params;
     Params.AddIgnoredActor(GetOwner());
 
-    // Sphere sweep along camera ray to give a generous targeting cone
-    GetWorld()->SweepMultiByChannel(
-        Hits,
-        CamLoc,
-        CamLoc + CamFwd * MagnetRange,
-        FQuat::Identity,
-        ECC_PhysicsBody,
-        FCollisionShape::MakeSphere(TraceRadius),
-        Params
-    );
+    // Try multiple channels so we catch objects regardless of their collision preset
+    const ECollisionChannel Channels[] = { ECC_PhysicsBody, ECC_WorldDynamic, ECC_WorldStatic, ECC_Visibility };
 
-    for (const FHitResult& Hit : Hits)
+    for (ECollisionChannel Channel : Channels)
     {
-        if (!Hit.GetActor())
-            continue;
-        if (!Hit.GetActor()->ActorHasTag(MagneticTag))
-            continue;
-        if (!Hit.GetComponent()->IsSimulatingPhysics())
-            continue;
-        return Hit.GetComponent();
+        TArray<FHitResult> Hits;
+
+        GetWorld()->SweepMultiByChannel(
+            Hits,
+            CamLoc,
+            CamLoc + CamFwd * MagnetRange,
+            FQuat::Identity,
+            Channel,
+            FCollisionShape::MakeSphere(TraceRadius),
+            Params
+        );
+
+        for (const FHitResult& Hit : Hits)
+        {
+            if (!Hit.GetActor())
+                continue;
+
+            bool bHasTag = Hit.GetActor()->ActorHasTag(MagneticTag) || Hit.GetComponent()->ComponentHasTag(MagneticTag);
+            if (!bHasTag || !Hit.GetComponent()->IsSimulatingPhysics())
+                continue;
+
+            return Hit.GetComponent();
+        }
     }
 
     return nullptr;

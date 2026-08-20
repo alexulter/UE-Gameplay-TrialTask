@@ -63,7 +63,7 @@ private:
 
     /** Single-shot repulsion impulse strength */
     UPROPERTY(EditDefaultsOnly, Category = "Magnet", meta=(ClampMin=100, ClampMax=100000))
-    float RepelImpulse = 8000.0f;
+    float RepelImpulse = 4000.0f;
 
     /** Tag to identify magnetic / metal objects */
     UPROPERTY(EditDefaultsOnly, Category = "Magnet")
